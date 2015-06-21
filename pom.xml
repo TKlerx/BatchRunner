@@ -104,6 +104,8 @@
 							<packageName>de.upb.timok</packageName>
 							<addClasspath>true</addClasspath>
 							<classpathPrefix>lib/</classpathPrefix>
+							<useUniqueVersions>false</useUniqueVersions>
+							
 						</manifest>
 						<manifestEntries>
 							<mode>development</mode>
