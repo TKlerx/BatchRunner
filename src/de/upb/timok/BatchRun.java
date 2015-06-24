@@ -80,7 +80,6 @@ public class BatchRun {
 	@Parameter(names = "-forceSettings", description = "Use this to force using the specified settings (can cause paging etc)")
 	boolean forceSettings = false;
 
-	// TODO include native dlls into maven build/release
 	/**
 	 * @param args
 	 * @throws InterruptedException
