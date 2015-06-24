@@ -28,7 +28,6 @@ import java.io.InputStreamReader;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
@@ -53,7 +52,6 @@ import com.beust.jcommander.ParameterException;
 public class BatchRun {
 
 	Sigar s = new Sigar();
-	Path configFolder = null;
 	ProgressEstimator pe;
 	@Parameter(names = "-help", help = true, description = "Print the help", hidden = true)
 	private final boolean help = false;
@@ -62,13 +60,13 @@ public class BatchRun {
 	@Parameter(names = "-reservedMemory", description = "the memory (in MB) to reserve for the system. If not set, it will be estimated")
 	Integer reservedMemory;
 	@Parameter(names = "-jarFile", description = "The path to the jar file to execute", required = true)
-	String jarName;
+	Path jarPath;
 	@Parameter(names = "-fileType", description = "The config file type (e.g. .xml)", required = true)
 	String fileType;
 	@Parameter(names = "-maxHeap", description = "The heap size for each job in MB. If not set, will be auto adjusted based on the available RAM and number of cores")
 	Integer maxHeap;
 	@Parameter(names = "-configFolder", description = "The folder with the config files", required = true)
-	String configFolderInput;
+	Path configFolder;
 	@Parameter(names = "-searchRecursive", description = "Set to search config files recursively")
 	boolean searchRecursive = false;
 	@Parameter(names = "-reserveSystemCore", arity = 1, description = "Set to false s.t. there is no core reserved for the system")
@@ -107,7 +105,6 @@ public class BatchRun {
 			System.exit(0);
 		}
 		int ram = 0;
-		configFolder = Paths.get(configFolderInput);
 		if (Files.notExists(configFolder)) {
 			logger.error("ConfigFolder {} does not exist. Aborting!", configFolder);
 			exitWithUsage();
@@ -189,9 +186,8 @@ public class BatchRun {
 		}
 		ramGobbler.start();
 		pe.start();
-		final Path path = Paths.get(configFolderInput);
 		try {
-			Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+			Files.walkFileTree(configFolder, new SimpleFileVisitor<Path>() {
 				@Override
 				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
 					if (!attrs.isDirectory() && file.toString().endsWith(fileType)) {
@@ -199,7 +195,7 @@ public class BatchRun {
 						pool.submit(new Runnable() {
 							@Override
 							public void run() {
-								startProcess(jarName, file);
+								startProcess(jarPath, file);
 							}
 						});
 					}
@@ -208,7 +204,7 @@ public class BatchRun {
 
 				@Override
 				public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
-					if (searchRecursive || Files.isSameFile(path, dir)) {
+					if (searchRecursive || Files.isSameFile(configFolder, dir)) {
 						return super.preVisitDirectory(dir, attrs);
 					} else {
 						return FileVisitResult.SKIP_SUBTREE;
@@ -245,9 +241,10 @@ public class BatchRun {
 		System.exit(1);
 	}
 
-	private void startProcess(final String jarName, final Path f) {
-		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + configFolder.toAbsolutePath(), "-XX:+HeapDumpOnOutOfMemoryError",
-				"-Xmx" + maxHeap + "M", "-jar", jarName, f.toAbsolutePath().toString() };
+	private void startProcess(final Path jarPath, final Path f) {
+		// do not use the config folder but maybe the folder where the jar is placed
+		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + jarPath.getParent().toString(), "-XX:+HeapDumpOnOutOfMemoryError",
+				"-Xmx" + maxHeap + "M", "-jar", jarPath.toAbsolutePath().toString(), f.toAbsolutePath().toString() };
 		logger.info("Starting job with config {}", f.toAbsolutePath());
 		final String jobQualifier = f.toAbsolutePath().toString();
 		// System.out.println(Arrays.toString(command));
