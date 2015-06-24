@@ -185,6 +185,9 @@ public class BatchRun {
 				reservedMemory, ram + reservedMemory, cores, jobs, maxHeap);
 		pe = new ProgressEstimator();
 		final ExecutorService pool = Executors.newFixedThreadPool(jobs);
+		if (gobblePool == null) {
+			gobblePool = Executors.newCachedThreadPool();
+		}
 		ramGobbler.start();
 		pe.start();
 		final Path path = Paths.get(configFolderInput);
@@ -218,6 +221,7 @@ public class BatchRun {
 		}
 
 		pool.shutdown();
+		gobblePool.shutdown();
 		logger.info("{} jobs submitted. Awaiting pool termination...", pe.getJobCount());
 		pool.awaitTermination(100000000, TimeUnit.DAYS);
 		ramGobbler.shutdown();
@@ -229,6 +233,8 @@ public class BatchRun {
 		logger.info("The average RAM consumption was: {} MB.", ramGobbler.averageRamNeeded());
 
 	}
+
+	ExecutorService gobblePool = null;
 
 	private void maxHeapHeuristic(final int ram, final int jobs) {
 		maxHeap = ram / jobs;
@@ -257,12 +263,8 @@ public class BatchRun {
 
 			proc = pb.start();
 			// any error???
-			final StreamGobbler errorGobbler = new StreamGobbler(proc.getErrorStream(), OutputType.ERROR);
-			// any output?
-			final StreamGobbler outputGobbler = new StreamGobbler(proc.getInputStream(), OutputType.INFO);
-			// kick them off
-			errorGobbler.start();
-			outputGobbler.start();
+			gobbleStream(proc.getErrorStream(), OutputType.ERROR);
+			gobbleStream(proc.getInputStream(), OutputType.INFO);
 
 			ramGobbler.jobStarted(jobQualifier);
 
@@ -444,17 +446,8 @@ public class BatchRun {
 		}
 	}
 
-	static class StreamGobbler extends Thread {
-		InputStream is;
-		OutputType type;
-
-		StreamGobbler(final InputStream is, final OutputType type) {
-			this.is = is;
-			this.type = type;
-		}
-
-		@Override
-		public void run() {
+	private void gobbleStream(final InputStream is, final OutputType type) {
+		gobblePool.execute(() -> {
 			try {
 				final InputStreamReader isr = new InputStreamReader(is);
 				final BufferedReader br = new BufferedReader(isr);
@@ -469,7 +462,6 @@ public class BatchRun {
 			} catch (final IOException ioe) {
 				logger.error("Unexpected IOException occured.", ioe);
 			}
-		}
+		});
 	}
-
 }
