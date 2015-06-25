@@ -101,6 +101,8 @@ public class BatchRun {
 		b.run();
 	}
 
+	int jobCount = 0;
+
 	public void run() throws InterruptedException {
 		if (help) {
 			new JCommander(this).usage();
@@ -108,7 +110,7 @@ public class BatchRun {
 		}
 		int ram = 0;
 		if (Files.notExists(configFolder)) {
-			logger.error("ConfigFolder {} does not exist. Aborting!", configFolder);
+			logger.error("ConfigFolder {} does not exist. Aborting!", configFolder.toAbsolutePath());
 			exitWithUsage();
 		}
 		final int cores = Runtime.getRuntime().availableProcessors();
@@ -193,10 +195,11 @@ public class BatchRun {
 				@Override
 				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
 					if (!attrs.isDirectory() && file.toString().endsWith(fileType)) {
-						pe.jobStarted(file.toAbsolutePath().toString());
+						jobCount++;
 						pool.submit(new Runnable() {
 							@Override
 							public void run() {
+								pe.jobStarted(file.toAbsolutePath().toString());
 								startProcess(jarPath, file);
 							}
 						});
@@ -216,10 +219,11 @@ public class BatchRun {
 		} catch (final IOException e) {
 			logger.error("Unexpected exception occured.", e);
 		}
+		pe.setJobCount(jobCount);
 
 		pool.shutdown();
 		gobblePool.shutdown();
-		logger.info("{} jobs submitted. Awaiting pool termination...", pe.getJobCount());
+		logger.info("{} jobs submitted. Awaiting pool termination...", jobCount);
 		pool.awaitTermination(100000000, TimeUnit.DAYS);
 		ramGobbler.shutdown();
 
@@ -262,8 +266,16 @@ public class BatchRun {
 
 			proc = pb.start();
 			// any error???
-			gobbleStream(proc.getErrorStream(), OutputType.ERROR);
-			gobbleStream(proc.getInputStream(), OutputType.INFO);
+
+			final StreamGobbler errorGobbler = new StreamGobbler(proc.getErrorStream(), OutputType.ERROR);
+			// any output?
+			final StreamGobbler outputGobbler = new StreamGobbler(proc.getInputStream(), OutputType.INFO);
+			// kick them off
+			errorGobbler.start();
+			outputGobbler.start();
+
+			// gobbleStream(proc.getErrorStream(), OutputType.ERROR);
+			// gobbleStream(proc.getInputStream(), OutputType.INFO);
 
 			ramGobbler.jobStarted(jobQualifier);
 
@@ -283,7 +295,7 @@ public class BatchRun {
 		// Process proc = Runtime.getRuntime().exec("java -jar " + jarName +
 		// " \"" + f.getAbsolutePath() + "\"");
 
-		logger.info("Finished job {} (out of {}). It took {}", pe.getJobsFinished(), pe.getJobCount(), pe.getLastJobTimeString());
+		logger.info("Finished job {} (out of {}). It took {}", pe.getJobsFinished(), jobCount, pe.getLastJobTimeString());
 		logger.info("Average job duration until now: {}", pe.getAverageJobTimeString());
 		logger.info("Estimated remaining time: {}\n", pe.getRemainingTimeString());
 	}
@@ -463,4 +475,33 @@ public class BatchRun {
 			}
 		});
 	}
+
+	static class StreamGobbler extends Thread {
+		InputStream is;
+		OutputType type;
+
+		StreamGobbler(final InputStream is, final OutputType type) {
+			this.is = is;
+			this.type = type;
+		}
+
+		@Override
+		public void run() {
+			try {
+				final InputStreamReader isr = new InputStreamReader(is);
+				final BufferedReader br = new BufferedReader(isr);
+				String line = null;
+				while ((line = br.readLine()) != null) {
+					if (type == OutputType.INFO) {
+						logger.info("{}", line);
+					} else if (type == OutputType.ERROR) {
+						logger.error("{}", line);
+					}
+				}
+			} catch (final IOException ioe) {
+				logger.error("Unexpected IOException occured.", ioe);
+			}
+		}
+	}
+
 }
