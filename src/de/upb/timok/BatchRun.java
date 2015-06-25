@@ -75,8 +75,10 @@ public class BatchRun {
 	int ramMonitorWaitingTime = 10000;
 	@Parameter(names = "-concurrentJobs", description = "how many jobs will run in parallel. If not set this will be the number of cores (maybe -1 for a system core)")
 	Integer jobsParameter;
-	@Parameter(names = "-forceSettings", description = "Use this to force using the specified settings (can cause paging etc)")
+	@Parameter(names = "-forceSettings", description = "Force using the specified settings (can cause paging etc)")
 	boolean forceSettings = false;
+	@Parameter(names = "-jcommander", description = "Called jar expects config files in jcommander format")
+	boolean isJCommanderFormat = false;
 
 	/**
 	 * @param args
@@ -242,10 +244,11 @@ public class BatchRun {
 	}
 
 	private void startProcess(final Path jarPath, final Path f) {
+		final String configString = isJCommanderFormat ? "@" : "" + f.toAbsolutePath().toString();
 		// do not use the config folder but maybe the folder where the jar is placed
 		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + jarPath.getParent().toString(), "-XX:+HeapDumpOnOutOfMemoryError",
-				"-Xmx" + maxHeap + "M", "-jar", jarPath.toAbsolutePath().toString(), f.toAbsolutePath().toString() };
-		logger.info("Starting job with config {}", f.toAbsolutePath());
+				"-Xmx" + maxHeap + "M", "-jar", jarPath.toAbsolutePath().toString(), configString };
+		logger.info("Starting job with config {}", configString);
 		final String jobQualifier = f.toAbsolutePath().toString();
 		// System.out.println(Arrays.toString(command));
 

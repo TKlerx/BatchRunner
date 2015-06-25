@@ -125,7 +125,6 @@
 							<addClasspath>true</addClasspath>
 							<classpathPrefix>lib/</classpathPrefix>
 							<useUniqueVersions>false</useUniqueVersions>
-
 						</manifest>
 						<manifestEntries>
 							<mode>development</mode>
