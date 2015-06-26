@@ -11,16 +11,6 @@
 
 package de.upb.timok;
 
-import gnu.trove.list.TIntList;
-import gnu.trove.list.array.TIntArrayList;
-import gnu.trove.map.TLongIntMap;
-import gnu.trove.map.TObjectLongMap;
-import gnu.trove.map.hash.TLongIntHashMap;
-import gnu.trove.map.hash.TObjectLongHashMap;
-import gnu.trove.procedure.TLongProcedure;
-import gnu.trove.set.TLongSet;
-import gnu.trove.set.hash.TLongHashSet;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,6 +38,16 @@ import org.slf4j.LoggerFactory;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
+
+import gnu.trove.list.TIntList;
+import gnu.trove.list.array.TIntArrayList;
+import gnu.trove.map.TLongIntMap;
+import gnu.trove.map.TObjectLongMap;
+import gnu.trove.map.hash.TLongIntHashMap;
+import gnu.trove.map.hash.TObjectLongHashMap;
+import gnu.trove.procedure.TLongProcedure;
+import gnu.trove.set.TLongSet;
+import gnu.trove.set.hash.TLongHashSet;
 
 public class BatchRun {
 
@@ -111,6 +111,10 @@ public class BatchRun {
 		int ram = 0;
 		if (Files.notExists(configFolder)) {
 			logger.error("ConfigFolder {} does not exist. Aborting!", configFolder.toAbsolutePath());
+			exitWithUsage();
+		}
+		if (Files.notExists(jarPath)) {
+			logger.error("jarFile {} does not exist. Aborting!", jarPath.toAbsolutePath());
 			exitWithUsage();
 		}
 		final int cores = Runtime.getRuntime().availableProcessors();
@@ -250,7 +254,8 @@ public class BatchRun {
 	private void startProcess(final Path jarPath, final Path f) {
 		final String configString = isJCommanderFormat ? "@" : "" + f.toAbsolutePath().toString();
 		// do not use the config folder but maybe the folder where the jar is placed
-		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + jarPath.getParent().toString(), "-XX:+HeapDumpOnOutOfMemoryError",
+		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + jarPath.toAbsolutePath().getParent().toString(),
+				"-XX:+HeapDumpOnOutOfMemoryError",
 				"-Xmx" + maxHeap + "M", "-jar", jarPath.toAbsolutePath().toString(), configString };
 		logger.info("Starting job with config {}", configString);
 		final String jobQualifier = f.toAbsolutePath().toString();
