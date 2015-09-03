@@ -11,16 +11,6 @@
 
 package de.upb.timok;
 
-import gnu.trove.list.TIntList;
-import gnu.trove.list.array.TIntArrayList;
-import gnu.trove.map.TLongIntMap;
-import gnu.trove.map.TObjectLongMap;
-import gnu.trove.map.hash.TLongIntHashMap;
-import gnu.trove.map.hash.TObjectLongHashMap;
-import gnu.trove.procedure.TLongProcedure;
-import gnu.trove.set.TLongSet;
-import gnu.trove.set.hash.TLongHashSet;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,7 +18,6 @@ import java.io.InputStreamReader;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
@@ -50,10 +39,19 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 
+import gnu.trove.list.TIntList;
+import gnu.trove.list.array.TIntArrayList;
+import gnu.trove.map.TLongIntMap;
+import gnu.trove.map.TObjectLongMap;
+import gnu.trove.map.hash.TLongIntHashMap;
+import gnu.trove.map.hash.TObjectLongHashMap;
+import gnu.trove.procedure.TLongProcedure;
+import gnu.trove.set.TLongSet;
+import gnu.trove.set.hash.TLongHashSet;
+
 public class BatchRun {
 
 	Sigar s = new Sigar();
-	Path configFolder = null;
 	ProgressEstimator pe;
 	@Parameter(names = "-help", help = true, description = "Print the help", hidden = true)
 	private final boolean help = false;
@@ -62,13 +60,13 @@ public class BatchRun {
 	@Parameter(names = "-reservedMemory", description = "the memory (in MB) to reserve for the system. If not set, it will be estimated")
 	Integer reservedMemory;
 	@Parameter(names = "-jarFile", description = "The path to the jar file to execute", required = true)
-	String jarName;
+	Path jarPath;
 	@Parameter(names = "-fileType", description = "The config file type (e.g. .xml)", required = true)
 	String fileType;
 	@Parameter(names = "-maxHeap", description = "The heap size for each job in MB. If not set, will be auto adjusted based on the available RAM and number of cores")
 	Integer maxHeap;
 	@Parameter(names = "-configFolder", description = "The folder with the config files", required = true)
-	String configFolderInput;
+	Path configFolder;
 	@Parameter(names = "-searchRecursive", description = "Set to search config files recursively")
 	boolean searchRecursive = false;
 	@Parameter(names = "-reserveSystemCore", arity = 1, description = "Set to false s.t. there is no core reserved for the system")
@@ -77,10 +75,11 @@ public class BatchRun {
 	int ramMonitorWaitingTime = 10000;
 	@Parameter(names = "-concurrentJobs", description = "how many jobs will run in parallel. If not set this will be the number of cores (maybe -1 for a system core)")
 	Integer jobsParameter;
-	@Parameter(names = "-forceSettings", description = "Use this to force using the specified settings (can cause paging etc)")
+	@Parameter(names = "-forceSettings", description = "Force using the specified settings (can cause paging etc)")
 	boolean forceSettings = false;
+	@Parameter(names = "-jcommander", description = "Called jar expects config files in jcommander format. Will prepend an '@' in front of the properties file")
+	boolean isJCommanderFormat = false;
 
-	// TODO include native dlls into maven build/release
 	/**
 	 * @param args
 	 * @throws InterruptedException
@@ -102,15 +101,20 @@ public class BatchRun {
 		b.run();
 	}
 
+	int jobCount = 0;
+
 	public void run() throws InterruptedException {
 		if (help) {
 			new JCommander(this).usage();
 			System.exit(0);
 		}
 		int ram = 0;
-		configFolder = Paths.get(configFolderInput);
 		if (Files.notExists(configFolder)) {
-			logger.error("ConfigFolder {} does not exist. Aborting!", configFolder);
+			logger.error("ConfigFolder {} does not exist. Aborting!", configFolder.toAbsolutePath());
+			exitWithUsage();
+		}
+		if (Files.notExists(jarPath)) {
+			logger.error("jarFile {} does not exist. Aborting!", jarPath.toAbsolutePath());
 			exitWithUsage();
 		}
 		final int cores = Runtime.getRuntime().availableProcessors();
@@ -185,19 +189,22 @@ public class BatchRun {
 				reservedMemory, ram + reservedMemory, cores, jobs, maxHeap);
 		pe = new ProgressEstimator();
 		final ExecutorService pool = Executors.newFixedThreadPool(jobs);
+		if (gobblePool == null) {
+			gobblePool = Executors.newCachedThreadPool();
+		}
 		ramGobbler.start();
 		pe.start();
-		final Path path = Paths.get(configFolderInput);
 		try {
-			Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+			Files.walkFileTree(configFolder, new SimpleFileVisitor<Path>() {
 				@Override
 				public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
 					if (!attrs.isDirectory() && file.toString().endsWith(fileType)) {
-						pe.jobStarted(file.toAbsolutePath().toString());
+						jobCount++;
 						pool.submit(new Runnable() {
 							@Override
 							public void run() {
-								startProcess(jarName, file);
+								pe.jobStarted(file.toAbsolutePath().toString());
+								startProcess(jarPath, file);
 							}
 						});
 					}
@@ -206,7 +213,7 @@ public class BatchRun {
 
 				@Override
 				public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) throws IOException {
-					if (searchRecursive || Files.isSameFile(path, dir)) {
+					if (searchRecursive || Files.isSameFile(configFolder, dir)) {
 						return super.preVisitDirectory(dir, attrs);
 					} else {
 						return FileVisitResult.SKIP_SUBTREE;
@@ -216,9 +223,11 @@ public class BatchRun {
 		} catch (final IOException e) {
 			logger.error("Unexpected exception occured.", e);
 		}
+		pe.setJobCount(jobCount);
 
 		pool.shutdown();
-		logger.info("{} jobs submitted. Awaiting pool termination...", pe.getJobCount());
+		gobblePool.shutdown();
+		logger.info("{} jobs submitted. Awaiting pool termination...", jobCount);
 		pool.awaitTermination(100000000, TimeUnit.DAYS);
 		ramGobbler.shutdown();
 
@@ -230,6 +239,8 @@ public class BatchRun {
 
 	}
 
+	ExecutorService gobblePool = null;
+
 	private void maxHeapHeuristic(final int ram, final int jobs) {
 		maxHeap = ram / jobs;
 		logger.info("No max heap size was specified, so setting max heap size={} MB ((RAM-ReservedMem)/(#jobs))", maxHeap);
@@ -240,10 +251,13 @@ public class BatchRun {
 		System.exit(1);
 	}
 
-	private void startProcess(final String jarName, final Path f) {
-		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + configFolder.toAbsolutePath(), "-XX:+HeapDumpOnOutOfMemoryError",
-				"-Xmx" + maxHeap + "M", "-jar", jarName, f.toAbsolutePath().toString() };
-		logger.info("Starting job with config {}", f.toAbsolutePath());
+	private void startProcess(final Path jarPath, final Path f) {
+		final String configString = isJCommanderFormat ? "@" : "" + f.toAbsolutePath().toString();
+		// do not use the config folder but maybe the folder where the jar is placed
+		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + jarPath.toAbsolutePath().getParent().toString(),
+				"-XX:+HeapDumpOnOutOfMemoryError",
+				"-Xmx" + maxHeap + "M", "-jar", jarPath.toAbsolutePath().toString(), configString };
+		logger.info("Starting job with config {}", configString);
 		final String jobQualifier = f.toAbsolutePath().toString();
 		// System.out.println(Arrays.toString(command));
 
@@ -257,12 +271,16 @@ public class BatchRun {
 
 			proc = pb.start();
 			// any error???
+
 			final StreamGobbler errorGobbler = new StreamGobbler(proc.getErrorStream(), OutputType.ERROR);
 			// any output?
 			final StreamGobbler outputGobbler = new StreamGobbler(proc.getInputStream(), OutputType.INFO);
 			// kick them off
 			errorGobbler.start();
 			outputGobbler.start();
+
+			// gobbleStream(proc.getErrorStream(), OutputType.ERROR);
+			// gobbleStream(proc.getInputStream(), OutputType.INFO);
 
 			ramGobbler.jobStarted(jobQualifier);
 
@@ -282,7 +300,7 @@ public class BatchRun {
 		// Process proc = Runtime.getRuntime().exec("java -jar " + jarName +
 		// " \"" + f.getAbsolutePath() + "\"");
 
-		logger.info("Finished job {} (out of {}). It took {}", pe.getJobsFinished(), pe.getJobCount(), pe.getLastJobTimeString());
+		logger.info("Finished job {} (out of {}). It took {}", pe.getJobsFinished(), jobCount, pe.getLastJobTimeString());
 		logger.info("Average job duration until now: {}", pe.getAverageJobTimeString());
 		logger.info("Estimated remaining time: {}\n", pe.getRemainingTimeString());
 	}
@@ -442,6 +460,25 @@ public class BatchRun {
 				logger.error("Unexpected exception occured.", e);
 			}
 		}
+	}
+
+	private void gobbleStream(final InputStream is, final OutputType type) {
+		gobblePool.execute(() -> {
+			try {
+				final InputStreamReader isr = new InputStreamReader(is);
+				final BufferedReader br = new BufferedReader(isr);
+				String line = null;
+				while ((line = br.readLine()) != null) {
+					if (type == OutputType.INFO) {
+						logger.info("{}", line);
+					} else if (type == OutputType.ERROR) {
+						logger.error("{}", line);
+					}
+				}
+			} catch (final IOException ioe) {
+				logger.error("Unexpected IOException occured.", ioe);
+			}
+		});
 	}
 
 	static class StreamGobbler extends Thread {

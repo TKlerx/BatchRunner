@@ -28,11 +28,14 @@ public class ProgressEstimator {
 	static AtomicInteger jobsFinished = new AtomicInteger(0);
 
 	TObjectLongMap<String> jobStartTime = new TObjectLongHashMap<>();
+	private int jobCount = 0;
 
 	public ProgressEstimator() {
-
 	}
 
+	public void setJobCount(final int jobCount) {
+		this.jobCount = jobCount;
+	}
 	public void jobStarted(final String jobQualifier){
 		final long currentTime = sw.getTime();
 		jobsStarted.incrementAndGet();
@@ -43,8 +46,7 @@ public class ProgressEstimator {
 		return jobsFinished.get();
 	}
 
-
-	public int getJobCount() {
+	public int getStartedJobs() {
 		return jobsStarted.get();
 	}
 
@@ -69,8 +71,12 @@ public class ProgressEstimator {
 		return DurationFormatUtils.formatDurationHMS(getLastJobTime());
 	}
 
+	private int getCount() {
+		return Math.max(jobCount, getStartedJobs());
+	}
+
 	public synchronized long getRemainingTime() {
-		return average(durations) * (jobsStarted.get() - jobsFinished.get());
+		return average(durations) * (getCount() - getJobsFinished());
 	}
 
 	public synchronized String getRemainingTimeString() {
