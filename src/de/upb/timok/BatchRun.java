@@ -77,7 +77,7 @@ public class BatchRun {
 	Integer jobsParameter;
 	@Parameter(names = "-forceSettings", description = "Force using the specified settings (can cause paging etc)")
 	boolean forceSettings = false;
-	@Parameter(names = "-jcommander", description = "Called jar expects config files in jcommander format")
+	@Parameter(names = "-jcommander", description = "Called jar expects config files in jcommander format. Will prepend an '@' in front of the properties file")
 	boolean isJCommanderFormat = false;
 
 	/**
