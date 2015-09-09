@@ -252,7 +252,7 @@ public class BatchRun {
 	}
 
 	private void startProcess(final Path jarPath, final Path f) {
-		final String configString = isJCommanderFormat ? "@" : "" + f.toAbsolutePath().toString();
+		final String configString = (isJCommanderFormat ? "@" : "") + f.toAbsolutePath().toString();
 		// do not use the config folder but maybe the folder where the jar is placed
 		final String[] command = new String[] { "java", "-XX:HeapDumpPath=" + jarPath.toAbsolutePath().getParent().toString(),
 				"-XX:+HeapDumpOnOutOfMemoryError",
