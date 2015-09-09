@@ -14,6 +14,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.upb.timok</groupId>
 	<artifactId>BatchRunner</artifactId>
+
 	<version>0.0.2-SNAPSHOT</version>
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
