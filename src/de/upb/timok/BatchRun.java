@@ -231,6 +231,9 @@ public class BatchRun {
 		pool.awaitTermination(100000000, TimeUnit.DAYS);
 		ramGobbler.shutdown();
 
+		if (ramGobbler.getUnwatchedProcesses().size() > 0) {
+			logger.warn("The following process commands were not taken into account for RAM statistics: {}", ramGobbler.getUnwatchedProcesses());
+		}
 		logger.info("All jobs took: {}", pe.getOverallTimeString());
 		logger.info("Average runtime per job: {}", pe.getAverageJobTimeString());
 		logger.info("The smallest job needed {} MB RAM.", ramGobbler.minRamNeeded());
@@ -306,6 +309,10 @@ public class BatchRun {
 	}
 
 	class RamGobbler extends Thread {
+		public HashSet<String> getUnwatchedProcesses() {
+			return unwatchedProcesses;
+		}
+
 		TLongIntMap ramNeededMaxPerJob = new TLongIntHashMap(100, 0.5f, NO_ENTRY_VALUE, NO_ENTRY_VALUE);
 		TLongSet runningProcesses = new TLongHashSet();
 		// private static final int WAITING_TIME = 60000;
@@ -314,9 +321,14 @@ public class BatchRun {
 
 		private static final int NO_ENTRY_VALUE = -1;
 
-		String query = "State.Name.eq=java,Args.6.eq=";
+		private static final String query = "State.Name.eq=java,Args.6.eq=";
 		TObjectLongMap<String> argPidCache = new TObjectLongHashMap<>();
 		HashSet<String> notWatchedProcesses = new HashSet<>();
+		/**
+		 * The set of processes that has never been seen when they should have run.
+		 */
+		HashSet<String> unwatchedProcesses = new HashSet<>();
+
 		Semaphore sem = new Semaphore(1);
 		static final long PID_NOT_FOUND = -1;
 
@@ -340,7 +352,7 @@ public class BatchRun {
 
 		public void jobFinished(final String commandArg) throws SigarException, InterruptedException {
 			sem.acquire();
-			runningProcesses.remove(getPidForCommandArg(commandArg));
+			runningProcesses.remove(getPidForCommandArg(commandArg, true));
 			sem.release();
 		}
 
@@ -354,7 +366,8 @@ public class BatchRun {
 			sem.release();
 		}
 
-		private long getPidForCommandArg(final String commandArg) throws SigarException {
+
+		private long getPidForCommandArg(final String commandArg, final boolean finished) throws SigarException {
 			if (argPidCache.containsKey(commandArg)) {
 				return argPidCache.get(commandArg);
 			} else {
@@ -367,7 +380,13 @@ public class BatchRun {
 						logger.debug(Arrays.toString(s.getProcArgs(p[i])));
 					}
 					// throw new IllegalStateException("Received more than one pid (" + Arrays.toString(p) + ") for job with config " + commandArg);
-					notWatchedProcesses.add(commandArg);
+					if (!finished) {
+						notWatchedProcesses.add(commandArg);
+					} else {
+						// process is finished anyway, so do not look for it anymore
+						notWatchedProcesses.remove(commandArg);
+						unwatchedProcesses.add(commandArg);
+					}
 					return PID_NOT_FOUND;
 				} else {
 					logger.debug("Found exactly one process ({}) for commandArg={}", p[0], commandArg);
@@ -450,7 +469,7 @@ public class BatchRun {
 					final Set<String> clonedSet = ((Set<String>) notWatchedProcesses.clone());
 					logger.debug("Looking for previously unfound processes...");
 					for (final String s : clonedSet) {
-						final long pid = getPidForCommandArg(s);
+						final long pid = getPidForCommandArg(s, false);
 						if (pid != PID_NOT_FOUND) {
 							runningProcesses.add(pid);
 						}
@@ -460,25 +479,6 @@ public class BatchRun {
 				logger.error("Unexpected exception occured.", e);
 			}
 		}
-	}
-
-	private void gobbleStream(final InputStream is, final OutputType type) {
-		gobblePool.execute(() -> {
-			try {
-				final InputStreamReader isr = new InputStreamReader(is);
-				final BufferedReader br = new BufferedReader(isr);
-				String line = null;
-				while ((line = br.readLine()) != null) {
-					if (type == OutputType.INFO) {
-						logger.info("{}", line);
-					} else if (type == OutputType.ERROR) {
-						logger.error("{}", line);
-					}
-				}
-			} catch (final IOException ioe) {
-				logger.error("Unexpected IOException occured.", ioe);
-			}
-		});
 	}
 
 	static class StreamGobbler extends Thread {
