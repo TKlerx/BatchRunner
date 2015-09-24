@@ -374,16 +374,17 @@ public class BatchRun {
 				final long[] p = ProcessFinder.find(s, query + commandArg);
 				logger.debug("Looking for process with commandarg = {}", commandArg);
 				if (p.length > 1 || p.length == 0) {
-					// something went wrong
-					logger.info("Received other than one pid ({}) for job with config {}. Trying again next time!", Arrays.toString(p), commandArg);
-					for (int i = 0; i < p.length; i++) {
-						logger.debug(Arrays.toString(s.getProcArgs(p[i])));
-					}
-					// throw new IllegalStateException("Received more than one pid (" + Arrays.toString(p) + ") for job with config " + commandArg);
 					if (!finished) {
+						// something went wrong
+						logger.info("Received other than one pid ({}) for job with config {}. Trying again next time!", Arrays.toString(p), commandArg);
+						for (int i = 0; i < p.length; i++) {
+							logger.debug(Arrays.toString(s.getProcArgs(p[i])));
+						}
+						// throw new IllegalStateException("Received more than one pid (" + Arrays.toString(p) + ") for job with config " + commandArg);
 						notWatchedProcesses.add(commandArg);
 					} else {
 						// process is finished anyway, so do not look for it anymore
+						logger.warn("Process finished but a process id was never found for the config {}", commandArg);
 						notWatchedProcesses.remove(commandArg);
 						unwatchedProcesses.add(commandArg);
 					}
