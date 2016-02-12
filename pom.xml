@@ -55,7 +55,6 @@
 				<executions>
 					<execution>
 						<id>copy-resources</id>
-						<!-- here the phase you need -->
 						<phase>package</phase>
 						<goals>
 							<goal>copy-resources</goal>
@@ -222,7 +221,7 @@
 		<dependency>
 			<groupId>de.upb.timok</groupId>
 			<artifactId>jcommander</artifactId>
-			<version>1.49-SNAPSHOT</version>
+			<version>1.49</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.logging.log4j</groupId>
